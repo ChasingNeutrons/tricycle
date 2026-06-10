@@ -72,9 +72,6 @@ namespace tricycle {
 /// Defaults of 0.1 kg per purchase.
 /// buy_frequency: How frequently (in timesteps) the reactor attempts to 
 /// purchase new fuel. Defaults to 1, i.e., purchasing every timestep.
-/// margin_to_excess: How much tritium in excess of the reserve is required
-/// before tritium in the store is classified as 'excess' to be sold.
-/// Defaults to 0.
 ///
 /// @section detailed Detailed Behavior
 /// The plant consists of several 'components' which can each contain tritium.
@@ -264,13 +261,13 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   double startup_inventory;  
 
   #pragma cyclus var { \
-    "doc": "Tritium inventory in addition to the reserve inventory before it can be sold.", \
-    "tooltip": "Tritium in storage greater than reserve_inventory+margin_to_excess is sold", \
-    "units": "kg", \
-    "default": 0, \
-    "uilabel": "Margin to excess" \
+    "doc": "Determines whether to compute startup and reserve inventories based on the "\
+	   "transition matrix.",\
+    "tooltip": "Recomputes inventory estimates", \
+    "default": false, \
+    "uilabel": "overwrite inventories" \
   }
-  double margin_to_excess;  
+  bool overwrite_inventories;  
 
   #pragma cyclus var { \
     "doc": "Fresh fuel commodity", \
