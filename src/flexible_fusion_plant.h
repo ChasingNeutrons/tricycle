@@ -137,6 +137,7 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   //Functions:
   bool ReadyToOperate();
   void OperateReactor(bool burn_tritium = true);
+  void EstimateInventories();
   Eigen::MatrixXd BuildMatrix(double tritium_consumption_rate);
   double SequesteredTritium();
   void RecordInventories(double tritium_storage, double tritium_excess, 
@@ -264,7 +265,7 @@ class FlexibleFusionPlant : public cyclus::Facility  {
     "doc": "Determines whether to compute startup and reserve inventories based on the "\
 	   "transition matrix.",\
     "tooltip": "Recomputes inventory estimates", \
-    "default": false, \
+    "default": False, \
     "uilabel": "overwrite inventories" \
   }
   bool overwrite_inventories;  

@@ -62,6 +62,9 @@ void FlexibleFusionPlant::EnterNotify() {
   }
 
   ValidateInput();
+  
+  // Set inventory sizes
+  if (overwrite_inventories) EstimateInventories();
 
   // Create matrices
   A_burn = BuildMatrix(burn_rate / TBE);
@@ -262,12 +265,53 @@ void FlexibleFusionPlant::ValidateInput() {
   }
   
   // Ensure startup inventory is greater than reserve  
-  if (startup_inventory < reserve_inventory) {
+  if (startup_inventory < reserve_inventory &
+		  !overwrite_inventories) {
     throw cyclus::ValueError(
         "Startup inventory must exceed or equal reserve inventory."
 	);
   }
 
+
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// Estimates the reserve and startup inventory required by the plant.
+// Does so by finding the equilibrium solution for the governing ODE system.
+// This amounts to finding the nullspace vector of the governing matrix.
+// This also requires augmenting the matrix to explicitly include a sell
+// component - this is usually not contained in the matrix solve, but handled
+// by cyclus. Here we assume the sell rate (at equilibrium) is the net rate of
+// tritium production, i.e., (TBR - 1) * burn_rate.
+void FlexibleFusionPlant::EstimateInventories() {
+
+  double availability = 1.0 - failure_probability;
+
+  Eigen::MatrixXd A = availability * A_burn + failure_probability * A_off;
+
+  // Subtract rate tritium is removed by being sold
+  int excess = components.size();
+  int plasma = components.size() + 1;
+  A(excess, plasma) -= (TBR - 1.0) * burn_rate * availability;
+
+  // Solve the linear system, removing the augmented component to become a source
+  int N = components.size() + 1;
+  Eigen::VectorXd Q = A.col(N).head(N);
+  Eigen::VectorXd x_eq = -A.topLeftCorner(N, N).colPivHouseholderQr().solve(Q);
+
+  reserve_inventory = x_eq(comp_index["storage"]);
+  startup_inventory = x_eq.sum();
+
+  // Flag if something has gone wrong
+  if (reserve_inventory < 0) {
+    throw cyclus::ValueError("Reserve inventory is negative. Check transfer/escape values.");
+  }
+  else if (startup_inventory < 0) {
+    throw cyclus::ValueError("Startup inventory is negative. Check transfer/escape values.");
+  }
+  else if (startup_inventory < reserve_inventory) {
+    throw cyclus::ValueError("Reserve inventory is greater than startup inventory. Check transfer/escape values.");
+  }
 
 }
 
