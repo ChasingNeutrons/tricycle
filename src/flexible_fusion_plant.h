@@ -72,6 +72,8 @@ namespace tricycle {
 /// Defaults of 0.1 kg per purchase.
 /// buy_frequency: How frequently (in timesteps) the reactor attempts to 
 /// purchase new fuel. Defaults to 1, i.e., purchasing every timestep.
+/// overwrite_inventories: recomputes the startup and reserve inventories based
+/// on the transition rate matrix. Overwrites any input values.
 ///
 /// @section detailed Detailed Behavior
 /// The plant consists of several 'components' which can each contain tritium.
@@ -137,11 +139,12 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   //Functions:
   bool ReadyToOperate();
   void OperateReactor(bool burn_tritium = true);
-  void EstimateInventories();
+  void EstimateStartup();
   Eigen::MatrixXd BuildMatrix(double tritium_consumption_rate);
   double SequesteredTritium();
   void RecordInventories(double tritium_storage, double tritium_excess, 
                          double sequestered_tritium);
+  void RecordComponentInventories();
 
  private:
   //State Variables:
@@ -252,7 +255,7 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   double reserve_inventory;  
 
   #pragma cyclus var { \
-    "doc": "Minimum tritium inventory to start the reactor from fresh. Should be larger "\
+    "doc": "Minimum tritium inventory to start the reactor from fresh. Should be greater "\
 	   "than or equal to reserve inventory", \
     "tooltip": "Minimum tritium inventory to start the reactor", \
     "units": "kg", \
@@ -262,13 +265,13 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   double startup_inventory;  
 
   #pragma cyclus var { \
-    "doc": "Determines whether to compute startup and reserve inventories based on the "\
+    "doc": "Determines whether to compute startup inventory based on the "\
 	   "transition matrix.",\
-    "tooltip": "Recomputes inventory estimates", \
+    "tooltip": "Recomputes startup inventory", \
     "default": False, \
-    "uilabel": "overwrite inventories" \
+    "uilabel": "compute startup inventory" \
   }
-  bool overwrite_inventories;  
+  bool compute_startup;  
 
   #pragma cyclus var { \
     "doc": "Fresh fuel commodity", \

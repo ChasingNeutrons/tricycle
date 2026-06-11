@@ -499,7 +499,80 @@ TEST_F(FlexibleFusionPlantTest, ZeroFailureAllowsOperation) {
   // sequester tritium into the breeder/storage loops.
   EXPECT_GT(seq_trit, 0.0);
 }
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEST_F(FlexibleFusionPlantTest, ComputeStartupZeroPower) {
+  // Test that a 0 MW plant correctly calculates that its startup inventory
+  // strictly equals its reserve inventory (no steady-state breeder mass).
+  
+  std::string config = 
+      " <fusion_power>0</fusion_power>"
+      " <reserve_inventory>5.0</reserve_inventory>"
+      " <compute_startup>1</compute_startup>"
+      " <components><val>storage</val><val>breeder</val></components>"
+      " <TBR>1.0</TBR>"
+      " <TBE>1.0</TBE>"
+      " <fuel_incommod>Tritium</fuel_incommod>";
 
+  cyclus::MockSim sim = InitializeSim(config, 1);
+  sim.Run();
+
+  // Query the transaction table to see how much Tritium was bought at t=0
+  std::vector<cyclus::Cond> conds_1;
+  conds_1.push_back(cyclus::Cond("Time", "==", std::string("0")));
+  conds_1.push_back(cyclus::Cond("Commodity", "==", std::string("Tritium")));
+  cyclus::QueryResult qr_1 = sim.db().Query("Transactions", &conds_1);
+  int resource_id = qr_1.GetVal<int>("ResourceId");
+
+  std::vector<cyclus::Cond> conds_2;
+  conds_2.push_back(cyclus::Cond("ResourceId", "==", std::to_string(resource_id)));
+  cyclus::QueryResult qr_2 = sim.db().Query("Resources", &conds_2);
+  double initial_buy = qr_2.GetVal<double>("Quantity");
+
+  // Expected: strictly the reserve inventory
+  EXPECT_DOUBLE_EQ(5.0, initial_buy);
+}
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEST_F(FlexibleFusionPlantTest, ComputeStartupAnalyticSteadyState) {
+  // Test that the linear solver accurately determines the steady-state
+  // breeder mass when active breeding and transfers are occurring.
+
+  std::string config =
+      " <fusion_power>300</fusion_power>"
+      " <reserve_inventory>5.0</reserve_inventory>"
+      " <compute_startup>1</compute_startup>"
+      " <components><val>storage</val><val>breeder</val></components>"
+      " <TBR>1.0</TBR>"
+      " <TBE>1.0</TBE>"
+      " <transfer_from><val>breeder</val></transfer_from>"
+      " <transfer_to><val>storage</val></transfer_to>"
+      " <transfer_rate><val>0.0001</val></transfer_rate>"
+      " <fuel_incommod>Tritium</fuel_incommod>";
+
+  cyclus::MockSim sim = InitializeSim(config, 1);
+  sim.Run();
+
+  std::vector<cyclus::Cond> conds_1;
+  conds_1.push_back(cyclus::Cond("Time", "==", std::string("0")));
+  conds_1.push_back(cyclus::Cond("Commodity", "==", std::string("Tritium")));
+  cyclus::QueryResult qr_1 = sim.db().Query("Transactions", &conds_1);
+  int resource_id = qr_1.GetVal<int>("ResourceId");
+
+  std::vector<cyclus::Cond> conds_2;
+  conds_2.push_back(cyclus::Cond("ResourceId", "==", std::to_string(resource_id)));
+  cyclus::QueryResult qr_2 = sim.db().Query("Resources", &conds_2);
+  double initial_buy = qr_2.GetVal<double>("Quantity");
+
+  // Analytical Calculation:
+  // Burn Rate = (300e6 W * 5.01e-27 kg) / (17.6 * 1.6021766e-13 J) = 5.3301146e-7 kg/s
+  // lambda_T = ln(2) / (12.32 * 365 * 24 * 3600) = 1.784e-9 / s
+  // Breeder Eq Mass = Burn Rate / (lambda_T + transfer_rate)
+  // Breeder Eq Mass = 5.3301146e-7 / (1.784e-9 + 0.001) = 5.330105e-3 kg
+  // Total Expected = 5.0 (reserve) + 5.330105e-3 (breeder)
+  double expected_startup = 5.0053301;
+
+  // Use EXPECT_NEAR for minor floating point matrix solver variations
+  EXPECT_NEAR(expected_startup, initial_buy, 1e-5);
+}
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // Do Not Touch! Below section required for connection with Cyclus
 cyclus::Agent* FlexibleFusionPlantConstructor(cyclus::Context* ctx) {

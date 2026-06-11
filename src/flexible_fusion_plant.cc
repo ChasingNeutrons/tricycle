@@ -63,12 +63,12 @@ void FlexibleFusionPlant::EnterNotify() {
 
   ValidateInput();
   
-  // Set inventory sizes
-  if (overwrite_inventories) EstimateInventories();
-
   // Create matrices
   A_burn = BuildMatrix(burn_rate / TBE);
   A_off  = BuildMatrix(0.0);
+
+  // Set inventory sizes
+  if (compute_startup) EstimateStartup();
 
   fuel_startup_policy
       .Init(this, &tritium_storage, std::string("Tritium Storage"),
@@ -113,12 +113,13 @@ void FlexibleFusionPlant::EnterNotify() {
 // Constructs matrices used for evolving tritium. Input is the rate at which
 // tritium is removed from the store and fed into the plasma. This should be
 // zero if the plant is switched off. 
+// Redirects bred tritium to the excess store to allow for book-keeping
+// of reserve tritium versus new tritium.
 Eigen::MatrixXd FlexibleFusionPlant::BuildMatrix(double tritium_consumption_rate) {
 
   // Add +1 for the plasma and +1 for the excess inventory
   int N = components.size() + 2;
   
-  // For legibility: plasma is the last element
   int plasma = N - 1;
   int excess = N - 2;
   int storage = comp_index["storage"];
@@ -189,6 +190,17 @@ Eigen::MatrixXd FlexibleFusionPlant::BuildMatrix(double tritium_consumption_rate
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 void FlexibleFusionPlant::ValidateInput() {
   
+  // Give a warning if the reserve inventory is incompatible with the
+  // timestep. If the timestep is very long, it is possible that the
+  // fuel usage per step is larger than reserve inventory. Therefore
+  // the plant would never reach an equilibrium.
+  if (reserve_inventory < fuel_usage_mass) {
+    cyclus::Warn<cyclus::VALUE_WARNING>("The simulation time step is too "
+		    "long for the Flexible Fusion Plant reserve inventory."
+		    " It is recommended to reduce the step length to avoid"
+		    " erroneous results.");
+  }
+
   // Ensure that components contains storage and breeder
   std::vector<std::string> required = {
       "breeder",
@@ -266,51 +278,70 @@ void FlexibleFusionPlant::ValidateInput() {
   
   // Ensure startup inventory is greater than reserve  
   if (startup_inventory < reserve_inventory &
-		  !overwrite_inventories) {
+		  !compute_startup) {
     throw cyclus::ValueError(
         "Startup inventory must exceed or equal reserve inventory."
 	);
   }
 
-
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-// Estimates the reserve and startup inventory required by the plant.
+// Estimates the startup inventory required by the plant.
 // Does so by finding the equilibrium solution for the governing ODE system.
-// This amounts to finding the nullspace vector of the governing matrix.
-// This also requires augmenting the matrix to explicitly include a sell
-// component - this is usually not contained in the matrix solve, but handled
-// by cyclus. Here we assume the sell rate (at equilibrium) is the net rate of
-// tritium production, i.e., (TBR - 1) * burn_rate.
-void FlexibleFusionPlant::EstimateInventories() {
+// This amount to solving the linear system when dT/dt = 0
+// This cannot estimate reserve inventory as that is determined by tritium loss
+// rates from component failures.
+// As the storage inventory is fixed, we solve a smaller system of equations
+// describing the movement of tritium to all other components.
+void FlexibleFusionPlant::EstimateStartup() {
 
   double availability = 1.0 - failure_probability;
 
-  Eigen::MatrixXd A = availability * A_burn + failure_probability * A_off;
-
-  // Subtract rate tritium is removed by being sold
-  int excess = components.size();
-  int plasma = components.size() + 1;
-  A(excess, plasma) -= (TBR - 1.0) * burn_rate * availability;
-
-  // Solve the linear system, removing the augmented component to become a source
+  Eigen::MatrixXd A_burn_eq = BuildMatrix(burn_rate / TBE);
+  Eigen::MatrixXd A_off_eq  = BuildMatrix(0.0);
+  
+  // Setup the linear system, explicitly extracting the source component
   int N = components.size() + 1;
+  Eigen::MatrixXd A = availability * A_burn_eq + failure_probability * A_off_eq;
   Eigen::VectorXd Q = A.col(N).head(N);
-  Eigen::VectorXd x_eq = -A.topLeftCorner(N, N).colPivHouseholderQr().solve(Q);
 
-  reserve_inventory = x_eq(comp_index["storage"]);
-  startup_inventory = x_eq.sum();
+  // Make a reduced matrix since we don't need the storage equation.
+  // The storage is given by reserve_inventory. Hence we can solve the smaller
+  // system for other components.
+  int N_red = components.size() - 1;
+  Eigen::MatrixXd A_red(N_red, N_red);
+  Eigen::VectorXd Q_red(N_red);
+
+  // Populate the matrix, neglecting the storage equation
+  int storage = comp_index["storage"];
+  int row_idx = 0;
+  for (int i = 0; i < N - 1; ++i) {
+    
+    if (i == storage) continue;
+
+    Q_red(row_idx) = Q(i) + A(i, storage) * reserve_inventory;
+
+    int col_idx = 0;
+    for (int j = 0; j < N - 1; ++j) {
+      
+      if (j == storage) continue;
+
+      A_red(row_idx, col_idx) = A(i, j);
+
+      col_idx++;
+    }
+    row_idx++;
+  }
+
+  Eigen::VectorXd x_eq = -A_red.colPivHouseholderQr().solve(Q_red);
+
+  startup_inventory = x_eq.sum() + reserve_inventory;
 
   // Flag if something has gone wrong
-  if (reserve_inventory < 0) {
-    throw cyclus::ValueError("Reserve inventory is negative. Check transfer/escape values.");
-  }
-  else if (startup_inventory < 0) {
-    throw cyclus::ValueError("Startup inventory is negative. Check transfer/escape values.");
-  }
-  else if (startup_inventory < reserve_inventory) {
-    throw cyclus::ValueError("Reserve inventory is greater than startup inventory. Check transfer/escape values.");
+  if ((x_eq.array() < 0.0).any()) {
+    throw cyclus::ValueError("Estimated negative tritium densities at equilibrium. "
+		    "Check transfer/escape values.");
   }
 
 }
@@ -351,6 +382,7 @@ void FlexibleFusionPlant::Tick() {
 void FlexibleFusionPlant::Tock() {
   RecordInventories(tritium_storage.quantity(), tritium_excess.quantity(),
                     SequesteredTritium());
+  RecordComponentInventories();
 }
 
 void FlexibleFusionPlant::RecordInventories(double tritium_storage,
@@ -381,6 +413,28 @@ double FlexibleFusionPlant::SequesteredTritium() {
   return current_sequestered_tritium;
 }
 
+void FlexibleFusionPlant::RecordComponentInventories() {
+  for (auto const& kv : comp_index) {
+    std::string name = kv.first;
+    int idx = kv.second;
+
+    double mass = 0.0;
+    if (idx == comp_index["storage"]) {
+      continue;
+    } else if (!tritium_elsewhere[idx].empty()) {
+      cyclus::toolkit::MatQuery mq(tritium_elsewhere[idx].Peek());
+      mass = mq.mass(tritium_id);
+    }
+
+    context()
+        ->NewDatum("FFPComponentInventories")
+        ->AddVal("AgentId", id())
+        ->AddVal("Time", context()->time())
+        ->AddVal("Component", name)
+        ->AddVal("TritiumMass", mass)
+        ->Record();
+  }
+}
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 bool FlexibleFusionPlant::ReadyToOperate() {
   
@@ -404,7 +458,7 @@ bool FlexibleFusionPlant::ReadyToOperate() {
   if (tritium < startup_inventory && !has_started) {
     return false;
   }
-  if (tritium < std::max(reserve_inventory, fuel_usage_mass)) {
+  if (tritium < fuel_usage_mass) {
     return false;
   }
 
