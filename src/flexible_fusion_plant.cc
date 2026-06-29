@@ -232,12 +232,12 @@ void FlexibleFusionPlant::ValidateInput() {
   for (int flow = 0; flow < transfer_rate.size(); flow++) {
 
     _require_string(comp_index, transfer_from[flow],
-		    "Unknown transfer source component: " + 
-		    transfer_from[flow]);
+	"Unknown transfer source component: " + 
+	transfer_from[flow]);
 
-      _require_string(comp_index, transfer_to[flow],
-		    "Unknown transfer destination component: " + 
-		    transfer_to[flow]);
+    _require_string(comp_index, transfer_to[flow],
+	"Unknown transfer destination component: " + 
+	transfer_to[flow]);
 
   }
   
@@ -340,7 +340,7 @@ void FlexibleFusionPlant::EstimateStartup() {
 
   // Flag if something has gone wrong
   if ((x_eq.array() < 0.0).any()) {
-    throw cyclus::ValueError("Estimated negative tritium densities at equilibrium. "
+    throw cyclus::ValueError("Estimated negative tritium densities at equilibrium.\n"
 		    "Check transfer/escape values.");
   }
 
@@ -382,22 +382,45 @@ void FlexibleFusionPlant::Tick() {
 void FlexibleFusionPlant::Tock() {
   RecordInventories(tritium_storage.quantity(), tritium_excess.quantity(),
                     SequesteredTritium());
-  RecordComponentInventories();
 }
 
 void FlexibleFusionPlant::RecordInventories(double tritium_storage,
                                          double tritium_excess,
                                          double sequestered_tritium) {
-  context()
-      ->NewDatum("FFPInventories")
+  
+  auto datum = context()->NewDatum("FFPInventories");
+  datum
       ->AddVal("AgentId", id())
       ->AddVal("Time", context()->time())
       ->AddVal("TritiumStorage", tritium_storage)
       ->AddVal("TritiumExcess", tritium_excess)
-      ->AddVal("TritiumSequestered", sequestered_tritium)
-      ->Record();
+      ->AddVal("TritiumSequestered", sequestered_tritium);
+
+  // This is necessary because AddVal seems to have a problem
+  // being fed a dynamic string.
+  column_names_buffer.clear();
+  column_names_buffer.reserve(components.size());
+
+  for (int idx = 0; idx < components.size(); idx++) {
+    std::string comp_name = components[idx];
+    double mass = 0.0;
+
+    if (comp_name == "storage") {
+      continue;
+    } else if (!tritium_elsewhere[idx].empty()) {
+      cyclus::toolkit::MatQuery mq(tritium_elsewhere[idx].Peek());
+      mass = mq.mass(tritium_id);
+    }
+
+    column_names_buffer.push_back("Tritium" + comp_name);
+    datum->AddVal(column_names_buffer.back().c_str(), mass);
+  }
+
+  datum->Record();
+
 }
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 double FlexibleFusionPlant::SequesteredTritium() {
   double current_sequestered_tritium = 0.0;
 
@@ -413,28 +436,6 @@ double FlexibleFusionPlant::SequesteredTritium() {
   return current_sequestered_tritium;
 }
 
-void FlexibleFusionPlant::RecordComponentInventories() {
-  for (auto const& kv : comp_index) {
-    std::string name = kv.first;
-    int idx = kv.second;
-
-    double mass = 0.0;
-    if (idx == comp_index["storage"]) {
-      continue;
-    } else if (!tritium_elsewhere[idx].empty()) {
-      cyclus::toolkit::MatQuery mq(tritium_elsewhere[idx].Peek());
-      mass = mq.mass(tritium_id);
-    }
-
-    context()
-        ->NewDatum("FFPComponentInventories")
-        ->AddVal("AgentId", id())
-        ->AddVal("Time", context()->time())
-        ->AddVal("Component", name)
-        ->AddVal("TritiumMass", mass)
-        ->Record();
-  }
-}
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 bool FlexibleFusionPlant::ReadyToOperate() {
   
@@ -458,7 +459,10 @@ bool FlexibleFusionPlant::ReadyToOperate() {
   if (tritium < startup_inventory && !has_started) {
     return false;
   }
-  if (tritium < fuel_usage_mass) {
+  // Note: this check ignores both decay and loss from storage
+  // to elsewhere. This will be reasonable for short time and
+  // assuming that the storage does not meaningfully leak.
+  if (tritium < fuel_usage_mass / TBE) {
     return false;
   }
 
@@ -504,6 +508,22 @@ void FlexibleFusionPlant::OperateReactor(bool burn_tritium) {
     }
 
   }
+
+  // For a mass balance check, compute the initial mass of tritium.
+  // Exclude the '1' plasma term
+  double initial_tritium = tritium_vector.sum() - 1.0;
+
+  // Estimate the global tritium post-operation
+  double lambda = pyne::decay_const(tritium_id);
+  double final_tritium = initial_tritium * std::exp(-lambda * dt);
+  double loss = 1.0 - 
+	  std::accumulate(escape_fraction.begin(), escape_fraction.end(), 0.0);
+  if (burn_tritium) {
+    double constant_gain = burn_rate * (TBR - 1)
+	    - burn_rate * loss * (1 - TBE)/ TBE;
+    final_tritium += constant_gain / lambda *
+	    (1.0 - std::exp(-dt * lambda));
+  }
   
   // Choose the matrix based on whether plasma is burning
   Eigen::MatrixXd M;
@@ -517,11 +537,21 @@ void FlexibleFusionPlant::OperateReactor(bool burn_tritium) {
   Eigen::VectorXd new_tritium = M * tritium_vector;
   
   // Update the densities in the appropriate buffers
+  double total_tritium = 0.0;
   for (int i = 0; i < N - 1; i++) {
    
     double current_mass = tritium_vector(i);
-    double new_mass = std::max(new_tritium(i), 0.0);
+    if (new_tritium(i) < 0.0) {
+      cyclus::Warn<cyclus::VALUE_WARNING>("Negative tritium has been produced "
+		    "in component " + components[i] + ": " + 
+		    std::to_string(new_tritium(i)) +"\n"
+		    "This will be clamped to zero.");
+      new_tritium(i) = 0.0;
+    }
+    double new_mass = new_tritium(i);
     double delta = new_mass - current_mass;
+
+    total_tritium += new_mass;
 
     // Handle Storage Buffer
     if (i == comp_index["storage"]) {
@@ -548,6 +578,15 @@ void FlexibleFusionPlant::OperateReactor(bool burn_tritium) {
       }
     }
 
+  }
+
+  // Compare the new masses computed from the matrix solver and the global balance
+  if (std::abs(total_tritium - final_tritium) > 1.0e-6) {
+      std::cout << "Error in tritium balance: "
+                << "matrix solver = " << total_tritium
+                << ", global balance = " << final_tritium
+                << ", difference = " << (total_tritium - final_tritium)
+                << std::endl;
   }
 
 }

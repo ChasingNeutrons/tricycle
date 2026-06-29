@@ -144,7 +144,6 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   double SequesteredTritium();
   void RecordInventories(double tritium_storage, double tritium_excess, 
                          double sequestered_tritium);
-  void RecordComponentInventories();
 
  private:
   //State Variables:
@@ -355,7 +354,12 @@ class FlexibleFusionPlant : public cyclus::Facility  {
 
   // Indices of different components
   std::map<std::string,int> comp_index;
-
+  
+  // Buffer for dynamically-generated per-component column names passed to
+  // AddVal. Must persist beyond the call to RecordInventories because Datum
+  // stores a raw const char* rather than copying the string (see AddValBase).
+  std::vector<std::string> column_names_buffer;
+  
   // Private function for input checking
   void ValidateInput();
 
