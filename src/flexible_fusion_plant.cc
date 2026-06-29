@@ -194,7 +194,7 @@ void FlexibleFusionPlant::ValidateInput() {
   // timestep. If the timestep is very long, it is possible that the
   // fuel usage per step is larger than reserve inventory. Therefore
   // the plant would never reach an equilibrium.
-  if (reserve_inventory < fuel_usage_mass) {
+  if (reserve_inventory < fuel_usage_mass / TBE) {
     cyclus::Warn<cyclus::VALUE_WARNING>("The simulation time step is too "
 		    "long for the Flexible Fusion Plant reserve inventory."
 		    " It is recommended to reduce the step length to avoid"
