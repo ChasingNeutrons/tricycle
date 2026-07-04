@@ -21,6 +21,11 @@ const double MW_to_W = 1000000;
 const double MeV_to_J = 1.6021766E-13;
 const double energy_DT = 17.6 * MeV_to_J;
 
+// Defined to avoid using eps_rsrc(): this has a value of 1e-6.
+// That would risk missing/losing a significant amount of tritium
+// which can be tracked in micrograms.
+const double tritium_eps = 1.0e-12;
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 FlexibleFusionPlant::FlexibleFusionPlant(cyclus::Context* ctx)
     : cyclus::Facility(ctx) {
@@ -48,6 +53,8 @@ void FlexibleFusionPlant::EnterNotify() {
   burn_rate = mass_tritium * fusion_power * MW_to_W/ 
 	  (conversion_efficiency * energy_DT);
   fuel_usage_mass = burn_rate * context()->dt();
+  feed_rate = burn_rate / TBE;
+  fuel_feed_mass = fuel_usage_mass / TBE;
 
   failure_probability = 1.0 - std::exp(-failure_frequency * context()->dt() / cyclusYear);  
   
@@ -64,7 +71,7 @@ void FlexibleFusionPlant::EnterNotify() {
   ValidateInput();
   
   // Create matrices
-  A_burn = BuildMatrix(burn_rate / TBE);
+  A_burn = BuildMatrix(feed_rate);
   A_off  = BuildMatrix(0.0);
 
   // Set inventory sizes
@@ -91,7 +98,10 @@ void FlexibleFusionPlant::EnterNotify() {
         .Set(fuel_incommod, tritium_comp);
 
   } else if (refuel_mode == "fill") {
-    double reserve = std::max(fuel_usage_mass, reserve_inventory);
+    // If fuel_feed_mass is larger than reserve inventory, this implies
+    // that the inventory balance will not be realistic. This should be 
+    // flagged in another warning but it may be better to terminate the simulation.
+    double reserve = std::max(fuel_feed_mass, reserve_inventory);
 
     fuel_refill_policy
         .Init(this, &tritium_storage, std::string("Input"), &fuel_tracker,
@@ -194,7 +204,7 @@ void FlexibleFusionPlant::ValidateInput() {
   // timestep. If the timestep is very long, it is possible that the
   // fuel usage per step is larger than reserve inventory. Therefore
   // the plant would never reach an equilibrium.
-  if (reserve_inventory < fuel_usage_mass / TBE) {
+  if (reserve_inventory < fuel_feed_mass) {
     cyclus::Warn<cyclus::VALUE_WARNING>("The simulation time step is too "
 		    "long for the Flexible Fusion Plant reserve inventory."
 		    " It is recommended to reduce the step length to avoid"
@@ -298,7 +308,7 @@ void FlexibleFusionPlant::EstimateStartup() {
 
   double availability = 1.0 - failure_probability;
 
-  Eigen::MatrixXd A_burn_eq = BuildMatrix(burn_rate / TBE);
+  Eigen::MatrixXd A_burn_eq = BuildMatrix(feed_rate);
   Eigen::MatrixXd A_off_eq  = BuildMatrix(0.0);
   
   // Setup the linear system, explicitly extracting the source component
@@ -366,8 +376,8 @@ void FlexibleFusionPlant::Tick() {
   // If storage requires more tritium, check if the excess can provide it
   double current = tritium_storage.quantity();
   double deficit = reserve_inventory - current;
-  if (deficit > cyclus::eps_rsrc() &&
-      tritium_excess.quantity() > cyclus::eps_rsrc()) {
+  if (deficit > tritium_eps &&
+      tritium_excess.quantity() > tritium_eps) {
 
     double transfer_mass = std::min(deficit, tritium_excess.quantity());
 
@@ -462,7 +472,7 @@ bool FlexibleFusionPlant::ReadyToOperate() {
   // Note: this check ignores both decay and loss from storage
   // to elsewhere. This will be reasonable for short time and
   // assuming that the storage does not meaningfully leak.
-  if (tritium < fuel_usage_mass / TBE) {
+  if (tritium < fuel_feed_mass) {
     return false;
   }
 
@@ -516,11 +526,11 @@ void FlexibleFusionPlant::OperateReactor(bool burn_tritium) {
   // Estimate the global tritium post-operation
   double lambda = pyne::decay_const(tritium_id);
   double final_tritium = initial_tritium * std::exp(-lambda * dt);
-  double loss = 1.0 - 
-	  std::accumulate(escape_fraction.begin(), escape_fraction.end(), 0.0);
   if (burn_tritium) {
+    double loss = 1.0 - 
+  	    std::accumulate(escape_fraction.begin(), escape_fraction.end(), 0.0);
     double constant_gain = burn_rate * (TBR - 1)
-	    - burn_rate * loss * (1 - TBE)/ TBE;
+	    - feed_rate * loss * (1 - TBE);
     final_tritium += constant_gain / lambda *
 	    (1.0 - std::exp(-dt * lambda));
   }
@@ -538,43 +548,43 @@ void FlexibleFusionPlant::OperateReactor(bool burn_tritium) {
   
   // Update the densities in the appropriate buffers
   double total_tritium = 0.0;
-  for (int i = 0; i < N - 1; i++) {
+  for (int comp = 0; comp < N - 1; comp++) {
    
-    double current_mass = tritium_vector(i);
-    if (new_tritium(i) < 0.0) {
+    double current_mass = tritium_vector(comp);
+    if (new_tritium(comp) < 0.0) {
       cyclus::Warn<cyclus::VALUE_WARNING>("Negative tritium has been produced "
-		    "in component " + components[i] + ": " + 
-		    std::to_string(new_tritium(i)) +"\n"
+		    "in component " + components[comp] + ": " + 
+		    std::to_string(new_tritium(comp)) +"\n"
 		    "This will be clamped to zero.");
-      new_tritium(i) = 0.0;
+      new_tritium(comp) = 0.0;
     }
-    double new_mass = new_tritium(i);
+    double new_mass = new_tritium(comp);
     double delta = new_mass - current_mass;
 
     total_tritium += new_mass;
 
     // Handle Storage Buffer
-    if (i == comp_index["storage"]) {
-      if (delta < -cyclus::eps_rsrc()) {
+    if (comp == comp_index["storage"]) {
+      if (delta < -tritium_eps) {
         tritium_storage.Pop(-delta);
-      } else if (delta > cyclus::eps_rsrc()) {
+      } else if (delta > tritium_eps) {
         tritium_storage.Push(cyclus::Material::Create(this, delta, tritium_comp));
       }
     }
     // and excess buffer
-    else if (i == excess) {
-      if (delta < -cyclus::eps_rsrc()) {
+    else if (comp == excess) {
+      if (delta < -tritium_eps) {
         tritium_excess.Pop(-delta);
-      } else if (delta > cyclus::eps_rsrc()) {
+      } else if (delta > tritium_eps) {
         tritium_excess.Push(cyclus::Material::Create(this, delta, tritium_comp));
       }
     }
     // Handle other components
     else {
-      if (delta < -cyclus::eps_rsrc()) {
-        tritium_elsewhere[i].Pop(-delta);
-      } else if (delta > cyclus::eps_rsrc()) {
-        tritium_elsewhere[i].Push(cyclus::Material::Create(this, delta, tritium_comp));
+      if (delta < -tritium_eps) {
+        tritium_elsewhere[comp].Pop(-delta);
+      } else if (delta > tritium_eps) {
+        tritium_elsewhere[comp].Push(cyclus::Material::Create(this, delta, tritium_comp));
       }
     }
 

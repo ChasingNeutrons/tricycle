@@ -334,6 +334,8 @@ class FlexibleFusionPlant : public cyclus::Facility  {
 
   double fuel_usage_mass;
   double burn_rate;
+  double feed_rate;
+  double fuel_feed_mass;
 
   // Variables controlling failure frequency and recovery
   int recovery_counter = 0;
