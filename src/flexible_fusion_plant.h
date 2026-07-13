@@ -72,8 +72,8 @@ namespace tricycle {
 /// Defaults of 0.1 kg per purchase.
 /// buy_frequency: How frequently (in timesteps) the reactor attempts to 
 /// purchase new fuel. Defaults to 1, i.e., purchasing every timestep.
-/// overwrite_inventories: recomputes the startup and reserve inventories based
-/// on the transition rate matrix. Overwrites any input values.
+/// compute_startup: recomputes the startup inventory based on the transition
+/// rate matrix. Overwrites any input value.
 ///
 /// @section detailed Detailed Behavior
 /// The plant consists of several 'components' which can each contain tritium.
