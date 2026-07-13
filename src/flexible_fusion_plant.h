@@ -144,6 +144,9 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   double SequesteredTritium();
   void RecordInventories(double tritium_storage, double tritium_excess, 
                          double sequestered_tritium);
+  // Helper for producing the tritium vector
+  Eigen::VectorXd CurrentTritiumVector();
+
 
  private:
   //State Variables:
@@ -332,10 +335,8 @@ class FlexibleFusionPlant : public cyclus::Facility  {
 
   cyclus::toolkit::TotalInvTracker fuel_tracker;
 
-  double fuel_usage_mass;
   double burn_rate;
   double feed_rate;
-  double fuel_feed_mass;
 
   // Variables controlling failure frequency and recovery
   int recovery_counter = 0;
@@ -346,6 +347,9 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   // or reserve inventory in deciding to operate
   bool has_started = false;
 
+  // Controls whether the plant can start selling tritium
+  bool time_to_sell = false;
+
   //Materials:
   cyclus::Material::Ptr sequestered_tritium;
 
@@ -353,6 +357,9 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   // One for with plasma, one for without
   Eigen::MatrixXd A_burn;
   Eigen::MatrixXd A_off;
+  // And their exponentiated counterparts
+  Eigen::MatrixXd EXPA_burn;
+  Eigen::MatrixXd EXPA_off;
 
   // Indices of different components
   std::map<std::string,int> comp_index;

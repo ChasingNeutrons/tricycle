@@ -151,12 +151,12 @@ TEST_F(FlexibleFusionPlantTest, OperateReactorSustainingTBR) {
   // Test behaviors of the OperateReactor function here
 
   std::string config = common_config +
-                       " <TBR>1.08</TBR> "
+                       " <TBR>1.9</TBR> "
 		       " <startup_inventory>200.0</startup_inventory>"
 		       " <reserve_inventory>100.0</reserve_inventory>"
 		       " <transfer_to><val>storage</val></transfer_to>"
 		       " <transfer_from><val>breeder</val></transfer_from>"
-		       " <transfer_rate><val>0.01</val></transfer_rate>"
+		       " <transfer_rate><val>10.0</val></transfer_rate>"
                        " <fuel_incommod>Tritium</fuel_incommod>";
 
   int simdur = 10;
@@ -591,7 +591,7 @@ TEST_F(FlexibleFusionPlantTest, ComputeStartupAnalyticSteadyState) {
   // Burn Rate = (300e6 W * 5.01e-27 kg) / (17.6 * 1.6021766e-13 J) = 5.3301146e-7 kg/s
   // lambda_T = ln(2) / (12.32 * 365 * 24 * 3600) = 1.784e-9 / s
   // Breeder Eq Mass = Burn Rate / (lambda_T + transfer_rate)
-  // Breeder Eq Mass = 5.3301146e-7 / (1.784e-9 + 0.001) = 5.330105e-3 kg
+  // Breeder Eq Mass = 5.3301146e-7 / (1.784e-9 + 0.0001) = 5.330105e-3 kg
   // Total Expected = 5.0 (reserve) + 5.330105e-3 (breeder)
   double expected_startup = 5.0053301;
 
