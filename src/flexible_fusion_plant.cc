@@ -50,8 +50,7 @@ void FlexibleFusionPlant::EnterNotify() {
 
   sequestered_tritium = cyclus::Material::CreateUntracked(0.0, tritium_comp);
   
-  burn_rate = mass_tritium * fusion_power * MW_to_W/ 
-	  (conversion_efficiency * energy_DT);
+  burn_rate = mass_tritium * fusion_power * MW_to_W/ energy_DT;
   feed_rate = burn_rate / TBE;
 
   failure_probability = 1.0 - std::exp(-failure_frequency * context()->dt() / cyclusYear);  
@@ -76,8 +75,17 @@ void FlexibleFusionPlant::EnterNotify() {
   EXPA_burn = (A_burn * context()->dt()).exp();
   EXPA_off = (A_off * context()->dt()).exp();
 
-  // Set inventory sizes
+  // Compute startup inventory
   if (compute_startup) EstimateStartup();
+  
+  // Output inventories for easy postprocessing
+  auto datum = context()->NewDatum("FFPStartup");
+  datum
+      ->AddVal("AgentId", id())
+      ->AddVal("Time", context()->time())
+      ->AddVal("StartupInventory", startup_inventory)
+      ->AddVal("ReserveInventory", reserve_inventory)
+      ->Record();
 
   fuel_startup_policy
       .Init(this, &tritium_storage, std::string("Tritium Storage"),

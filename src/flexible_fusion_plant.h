@@ -35,8 +35,6 @@ namespace tricycle {
 /// @section optionalparams Optional Parameters
 /// TBE: tritium burn efficiency, the fraction of tritium sent to the plasma
 /// which is burned. Defaults to 1.
-/// conversion_efficiency: the efficiency of conversion from fusion heat
-/// to electricity. Defaults to 1.
 /// failure_frequency: the frequency (per year) with which the plant shuts
 /// down - a measure of plant reliability. Defaults to 0, i.e., perfectly
 /// reliable.
@@ -80,9 +78,7 @@ namespace tricycle {
 /// During Tick, the plant decides whether to operate based on several factors.
 /// If the plant has not previously operated, it checks whether it has a
 /// sufficiently large startup_inventory. If the plant has previously operated,
-/// it instead checks whether it has a sufficient reserve_inventory.
-/// In case these are both small, the plant also checks whether it has enough
-/// tritium to burn during the timestep.
+/// it instead checks whether it has a sufficient inventory currently in storage.
 /// Finally, the plant may fail during a step, depending on its failure_frequency.
 /// A failure probability is calculated, a random number is generated, and
 /// its value then determines whether the plant operates. If it fails, it 
@@ -95,12 +91,7 @@ namespace tricycle {
 /// will still leak/transfer from other components as specified, e.g., from the
 /// blanket into storage.
 ///
-/// Following operation, tritium in excess of the reserve is moved to the
-/// excess store where it can be sold.
-///
-/// Place a description of the detailed behavior of the agent. Consider
-/// describing the behavior at the tick and tock as well as the behavior
-/// upon sending and receiving materials and messages.
+/// Following operation, tritium in excess of the reserve is offered to be sold.
 ///
 class FlexibleFusionPlant : public cyclus::Facility  {
  public:
@@ -160,17 +151,6 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   }
   double fusion_power;
   
-  #pragma cyclus var { \
-    "doc": "Conversion efficiency from DT burning to electrical power", \
-    "tooltip": "Conversion efficiency", \
-    "units": "dimensionless", \
-    "uitype": "range", \
-    "range": [0, 1], \
-    "default": 1, \
-    "uilabel": "Conversion efficiency" \
-  }
-  double conversion_efficiency;
-
   #pragma cyclus var { \
     "doc": "Achievable system tritium breeding ratio before decay", \
     "tooltip": "Achievable system tritium breeding ratio before decay", \
