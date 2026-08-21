@@ -352,6 +352,8 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   // Private function for input checking
   void ValidateInput();
 
+  void ExtractHelium(cyclus::toolkit::ResBuf<Material>& buf);
+
   // Private function for string checking
   void _require_string(std::map<std::string, int> string_map, 
 		  std::string required, std::string error_string);
