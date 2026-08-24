@@ -352,6 +352,12 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   // Private function for input checking
   void ValidateInput();
 
+  // To keep tritium streams pure, it is sometimes necessary to modify the
+  // decayed tritium materials to pull out the helium-3 that accumulates. 
+  // This function does so by separating the two, such that the mass of the
+  // decayed tritium is correct (as opposed to simply transmuting it back to T).
+  void ExtractHelium(cyclus::toolkit::ResBuf<Material>& buf);
+
   // Private function for string checking
   void _require_string(std::map<std::string, int> string_map, 
 		  std::string required, std::string error_string);
