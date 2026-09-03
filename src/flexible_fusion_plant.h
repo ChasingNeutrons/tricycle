@@ -190,7 +190,7 @@ class FlexibleFusionPlant : public cyclus::Facility  {
     "default": 1, \
     "tooltip": "Post-failure shutdown duration", \
     "uitype": "range", \
-    "range": [1, 100], \
+    "range": [1, 1e299], \
     "uilabel": "Shutdown duration" \
   }
   int shutdown_duration;
