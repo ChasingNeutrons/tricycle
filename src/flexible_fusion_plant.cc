@@ -277,6 +277,25 @@ void FlexibleFusionPlant::ValidateInput() {
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+void FlexibleFusionPlant::ExtractHelium(ResBuf<Material>& buf) {
+  int He3_id = pyne::nucname::id("He-3");
+  Composition::Ptr He3 = Composition::CreateFromAtom(CompMap({{He3_id, 1.0}}));
+
+  if (!buf.empty()) {
+    Material::Ptr mat = buf.Pop();
+    cyclus::toolkit::MatQuery mq(mat);
+
+    // Gets automatically deleted when out of scope
+    Material::Ptr helium = mat->ExtractComp(mq.mass(He3_id), He3);
+
+    // This guarantees we've got pure tritium and more importantly updates
+    // prev_decay_time_
+    mat->Transmute(tritium_comp);
+    buf.Push(mat);
+  }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // Estimates the startup inventory required by the plant.
 // Does so by finding the equilibrium solution for the governing ODE system.
 // This amount to solving the linear system when dT/dt = 0
@@ -401,9 +420,16 @@ void FlexibleFusionPlant::Tick() {
     // Move tritium in excess of reserve_inventory to the excess
     double transfer_mass = std::max(tritium_storage.quantity() - reserve_inventory, 0.0);
     cyclus::Material::Ptr mat = tritium_storage.Pop(transfer_mass);
+
+    // Update the prev_decay_time_ of mat while guaranteeing that it has
+    // the correct composition, which it should already.
+    mat->Transmute(tritium_comp);
+
+    // Ensure that the material timestamps are correct and excess is pure T
+    tritium_excess.Decay();
+    ExtractHelium(tritium_excess);
     tritium_excess.Push(mat);
   }
-
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -529,6 +555,9 @@ Eigen::VectorXd FlexibleFusionPlant::CurrentTritiumVector() {
 void FlexibleFusionPlant::OperateReactor(bool burn_tritium) {
 
   double dt = context()->dt();
+
+  cyclus::toolkit::RecordTimeSeries<double>("FusionPower", this, 
+      burn_tritium ? fusion_power : 0.0 , "MW_fus");
   
   // Construct tritium vector and evolve it according to 
   // burn rate and transition rates.

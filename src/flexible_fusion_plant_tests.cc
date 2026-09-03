@@ -279,7 +279,7 @@ TEST_F(FlexibleFusionPlantTest, EnterNotifySellPolicy) {
   sim.AddRecipe("tritium", tritium());
 
   sim.AddSource("Tritium").capacity(100).recipe("tritium").Finalize();
-  sim.AddSink("Tritium").Finalize();
+  sim.AddSink("Tritium").recipe("tritium").Finalize();
 
   int id = sim.Run();
 
@@ -525,6 +525,34 @@ TEST_F(FlexibleFusionPlantTest, ZeroFailureAllowsOperation) {
   EXPECT_GT(seq_trit, 0.0);
 }
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEST_F(FlexibleFusionPlantTest, RecordsFusionPower) {
+  std::string config = common_config +
+                       " <TBR>1.00</TBR> "
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <startup_inventory>6.0</startup_inventory>"
+                       " <fuel_incommod>Tritium</fuel_incommod>"
+                       " <failure_frequency>0.0</failure_frequency>";
+
+  int simdur = 4;
+  cyclus::MockSim sim = InitializeSim(config, simdur);
+  int id = sim.Run();
+
+  std::vector<Cond> conds;
+  conds.push_back(Cond("AgentId", "==", std::to_string(id)));
+  QueryResult qr = sim.db().Query("TimeSeriesFusionPower", &conds);
+
+  ASSERT_EQ(simdur, qr.rows.size());
+  bool recorded_nameplate_power = false;
+  for (int time = 0; time < simdur; ++time) {
+    EXPECT_EQ(time, qr.GetVal<int>("Time", time));
+    EXPECT_EQ("MW_fus", qr.GetVal<std::string>("Units", time));
+    if (qr.GetVal<double>("Value", time) == 300.0) {
+      recorded_nameplate_power = true;
+    }
+  }
+  EXPECT_TRUE(recorded_nameplate_power);
+}
+
 TEST_F(FlexibleFusionPlantTest, ComputeStartupZeroPower) {
   // Test that a 0 MW plant correctly calculates that its startup inventory
   // strictly equals its reserve inventory (no steady-state breeder mass).
@@ -597,6 +625,91 @@ TEST_F(FlexibleFusionPlantTest, ComputeStartupAnalyticSteadyState) {
 
   // Use EXPECT_NEAR for minor floating point matrix solver variations
   EXPECT_NEAR(expected_startup, initial_buy, 1e-5);
+}
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEST_F(FlexibleFusionPlantTest, OutgoingTritiumHasCurrentDecayTime) {
+  std::string config = common_config +
+                       " <TBR>1.9</TBR>"
+                       " <startup_inventory>6.0</startup_inventory>"
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <transfer_to><val>storage</val></transfer_to>"
+                       " <transfer_from><val>breeder</val></transfer_from>"
+                       " <transfer_rate><val>10.0</val></transfer_rate>"
+                       " <fuel_incommod>Tritium</fuel_incommod>";
+
+  cyclus::MockSim sim(
+      cyclus::AgentSpec(":tricycle:FlexibleFusionPlant"), config, 10);
+  sim.AddRecipe("tritium", tritium());
+  sim.AddSource("Tritium")
+      .recipe("tritium")
+      .capacity(6.0)
+      .Finalize();
+  sim.AddSink("Tritium").Finalize();
+
+  int facility_id = sim.Run();
+
+  std::vector<Cond> conds;
+  conds.push_back(Cond("SenderId", "==", facility_id));
+  conds.push_back(Cond("Commodity", "==", std::string("Tritium")));
+  conds.push_back(Cond("Time", ">", 1)); // give the faciltiy time to start up
+  QueryResult transactions = sim.db().Query("Transactions", &conds);
+
+  ASSERT_GT(transactions.rows.size(), 0);
+  int transaction_time = transactions.GetVal<int>("Time");
+  int resource_id = transactions.GetVal<int>("ResourceId");
+
+  std::vector<Cond> material_conds;
+  material_conds.push_back(Cond("ResourceId", "==", resource_id));
+  QueryResult material_info = sim.db().Query("MaterialInfo", &material_conds);
+
+  ASSERT_GT(material_info.rows.size(), 0);
+  EXPECT_GT(transaction_time, 1);
+  EXPECT_EQ(transaction_time,
+            material_info.GetVal<int>("PrevDecayTime"));
+}
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEST_F(FlexibleFusionPlantTest, AccumulatedExcessHasCurrentDecayTimeWhenSold) {
+  std::string config = common_config +
+                       " <TBR>1.9</TBR>"
+                       " <startup_inventory>6.0</startup_inventory>"
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <transfer_to><val>storage</val></transfer_to>"
+                       " <transfer_from><val>breeder</val></transfer_from>"
+                       " <transfer_rate><val>10.0</val></transfer_rate>"
+                       " <fuel_incommod>Tritium</fuel_incommod>";
+
+  cyclus::MockSim sim(
+      cyclus::AgentSpec(":tricycle:FlexibleFusionPlant"), config, 10);
+  sim.AddRecipe("tritium", tritium());
+  sim.AddSource("Tritium")
+      .recipe("tritium")
+      .capacity(6.0)
+      .Finalize();
+  sim.AddSink("Tritium").recipe("tritium").start(5).Finalize();
+
+  int facility_id = sim.Run();
+
+  QueryResult waiting_inventory = TimeInventoryQuery(sim, "4");
+  ASSERT_GT(waiting_inventory.rows.size(), 0);
+  EXPECT_GT(waiting_inventory.GetVal<double>("TritiumExcess"), 0.0);
+
+  std::vector<Cond> conds;
+  conds.push_back(Cond("SenderId", "==", facility_id));
+  conds.push_back(Cond("Commodity", "==", std::string("Tritium")));
+  QueryResult transactions = sim.db().Query("Transactions", &conds);
+
+  ASSERT_GT(transactions.rows.size(), 0);
+  int transaction_time = transactions.GetVal<int>("Time");
+  int resource_id = transactions.GetVal<int>("ResourceId");
+
+  std::vector<Cond> material_conds;
+  material_conds.push_back(Cond("ResourceId", "==", resource_id));
+  QueryResult material_info = sim.db().Query("MaterialInfo", &material_conds);
+
+  ASSERT_GT(material_info.rows.size(), 0);
+  EXPECT_EQ(5, transaction_time);
+  EXPECT_EQ(transaction_time,
+            material_info.GetVal<int>("PrevDecayTime"));
 }
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // Do Not Touch! Below section required for connection with Cyclus
