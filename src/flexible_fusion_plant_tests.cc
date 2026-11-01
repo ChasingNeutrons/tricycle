@@ -525,6 +525,34 @@ TEST_F(FlexibleFusionPlantTest, ZeroFailureAllowsOperation) {
   EXPECT_GT(seq_trit, 0.0);
 }
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEST_F(FlexibleFusionPlantTest, RecordsFusionPower) {
+  std::string config = common_config +
+                       " <TBR>1.00</TBR> "
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <startup_inventory>6.0</startup_inventory>"
+                       " <fuel_incommod>Tritium</fuel_incommod>"
+                       " <failure_frequency>0.0</failure_frequency>";
+
+  int simdur = 4;
+  cyclus::MockSim sim = InitializeSim(config, simdur);
+  int id = sim.Run();
+
+  std::vector<Cond> conds;
+  conds.push_back(Cond("AgentId", "==", std::to_string(id)));
+  QueryResult qr = sim.db().Query("TimeSeriesFusionPower", &conds);
+
+  ASSERT_EQ(simdur, qr.rows.size());
+  bool recorded_nameplate_power = false;
+  for (int time = 0; time < simdur; ++time) {
+    EXPECT_EQ(time, qr.GetVal<int>("Time", time));
+    EXPECT_EQ("MW_fus", qr.GetVal<std::string>("Units", time));
+    if (qr.GetVal<double>("Value", time) == 300.0) {
+      recorded_nameplate_power = true;
+    }
+  }
+  EXPECT_TRUE(recorded_nameplate_power);
+}
+
 TEST_F(FlexibleFusionPlantTest, ComputeStartupZeroPower) {
   // Test that a 0 MW plant correctly calculates that its startup inventory
   // strictly equals its reserve inventory (no steady-state breeder mass).

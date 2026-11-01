@@ -555,6 +555,9 @@ Eigen::VectorXd FlexibleFusionPlant::CurrentTritiumVector() {
 void FlexibleFusionPlant::OperateReactor(bool burn_tritium) {
 
   double dt = context()->dt();
+
+  cyclus::toolkit::RecordTimeSeries<double>("FusionPower", this, 
+      burn_tritium ? fusion_power : 0.0 , "MW_fus");
   
   // Construct tritium vector and evolve it according to 
   // burn rate and transition rates.
