@@ -30,8 +30,6 @@ static Composition::Ptr decayed_tritium() {
 
 static std::string common_config =
     " <fusion_power>300</fusion_power>"
-    " <reserve_inventory>1.0</reserve_inventory>"
-    " <startup_inventory>6.0</startup_inventory>"
     " <components><val>storage</val><val>breeder</val></components>";
 
 static cyclus::MockSim InitializeSim(std::string config, int simdur) {
@@ -100,6 +98,8 @@ TEST_F(FlexibleFusionPlantTest, MassBalance) {
       //" <fuel_incommod>Tritium</fuel_incommod>"
   std::string config =
       common_config +
+      " <reserve_inventory>1.0</reserve_inventory>"
+      " <startup_inventory>6.0</startup_inventory>"
       " <TBR>1.00</TBR>"
       " <TBE>1.00</TBE>";
 
@@ -126,6 +126,8 @@ TEST_F(FlexibleFusionPlantTest, WrongFuelStartup) {
   std::string config =
       common_config +
       " <fuel_incommod>Enriched_Lithium</fuel_incommod> "
+      " <reserve_inventory>1.0</reserve_inventory>"
+      " <startup_inventory>6.0</startup_inventory>"
       " <TBR>1.0</TBR> ";
 
   int simdur = 3;
@@ -149,11 +151,12 @@ TEST_F(FlexibleFusionPlantTest, OperateReactorSustainingTBR) {
   // Test behaviors of the OperateReactor function here
 
   std::string config = common_config +
-                       " <TBR>1.08</TBR> "
-		       " <reserve_inventory>10.0</reserve_inventory>"
+                       " <TBR>1.9</TBR> "
+		       " <startup_inventory>200.0</startup_inventory>"
+		       " <reserve_inventory>100.0</reserve_inventory>"
 		       " <transfer_to><val>storage</val></transfer_to>"
 		       " <transfer_from><val>breeder</val></transfer_from>"
-		       " <transfer_rate><val>0.01</val></transfer_rate>"
+		       " <transfer_rate><val>10.0</val></transfer_rate>"
                        " <fuel_incommod>Tritium</fuel_incommod>";
 
   int simdur = 10;
@@ -175,6 +178,8 @@ TEST_F(FlexibleFusionPlantTest, EnterNotifyInitialFillDefault) {
 
   std::string config = common_config +
                        " <TBR>1.00</TBR> "
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <startup_inventory>6.0</startup_inventory>"
                        " <fuel_incommod>Tritium</fuel_incommod>";
 
   int simdur = 2;
@@ -201,6 +206,8 @@ TEST_F(FlexibleFusionPlantTest, EnterNotifyScheduleFill) {
 
   std::string config = common_config +
                        " <TBR>1.00</TBR> "
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <startup_inventory>6.0</startup_inventory>"
                        " <fuel_incommod>Tritium</fuel_incommod>"
                        " <buy_quantity>0.1</buy_quantity>"
                        " <buy_frequency>1</buy_frequency>"
@@ -244,6 +251,8 @@ TEST_F(FlexibleFusionPlantTest, EnterNotifyInvalidFill) {
 
   std::string config = common_config +
                        " <TBR>1.00</TBR> "
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <startup_inventory>6.0</startup_inventory>"
                        " <fuel_incommod>Tritium</fuel_incommod>"
                        " <buy_quantity>0.1</buy_quantity>"
                        " <buy_frequency>1</buy_frequency>"
@@ -287,6 +296,8 @@ TEST_F(FlexibleFusionPlantTest, InvalidTransferVectorsLength) {
   // Tests that unequal transfer array lengths are caught in EnterNotify
   std::string config = common_config +
                        " <TBR>1.00</TBR> "
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <startup_inventory>6.0</startup_inventory>"
                        " <fuel_incommod>Tritium</fuel_incommod>"
                        " <transfer_from><val>breeder</val></transfer_from>"
                        " <transfer_to><val>storage</val></transfer_to>"
@@ -301,6 +312,8 @@ TEST_F(FlexibleFusionPlantTest, InvalidTransferUnknownComponent) {
   // Tests that referring to an undefined component throws an error
   std::string config = common_config +
                        " <TBR>1.00</TBR> "
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <startup_inventory>6.0</startup_inventory>"
                        " <fuel_incommod>Tritium</fuel_incommod>"
                        " <transfer_from><val>breeder</val></transfer_from>"
                        " <transfer_to><val>nonexistent_component</val></transfer_to>"
@@ -315,6 +328,8 @@ TEST_F(FlexibleFusionPlantTest, InvalidEscapeFractionSum) {
   // Tests that escape fractions cannot physically exceed 100%
   std::string config = common_config +
                        " <TBR>1.00</TBR> "
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <startup_inventory>6.0</startup_inventory>"
                        " <fuel_incommod>Tritium</fuel_incommod>"
                        " <escape_fraction><val>0.6</val><val>0.5</val></escape_fraction>"
                        " <escape_to><val>storage</val><val>breeder</val></escape_to>";
@@ -328,6 +343,8 @@ TEST_F(FlexibleFusionPlantTest, InvalidEscapeFractionsNegative) {
   // Tests that escape fractions cannot be negative
   std::string config = common_config +
                        " <TBR>1.00</TBR> "
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <startup_inventory>6.0</startup_inventory>"
                        " <fuel_incommod>Tritium</fuel_incommod>"
                        " <escape_fraction><val>-0.1</val></escape_fraction>"
                        " <escape_to><val>storage</val></escape_to>";
@@ -342,6 +359,8 @@ TEST_F(FlexibleFusionPlantTest, ValidTritiumTransferMovement) {
   // successfully traverses from the breeder to the storage component.
   std::string config = common_config +
                        " <TBR>1.10</TBR> "
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <startup_inventory>6.0</startup_inventory>"
                        " <fuel_incommod>Tritium</fuel_incommod>"
                        " <transfer_from><val>breeder</val></transfer_from>"
                        " <transfer_to><val>storage</val></transfer_to>"
@@ -367,6 +386,8 @@ TEST_F(FlexibleFusionPlantTest, ValidEscapeFractionMovement) {
   // into the designated target component.
   std::string config = common_config +
                        " <TBR>1.00</TBR> "
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <startup_inventory>6.0</startup_inventory>"
                        " <fuel_incommod>Tritium</fuel_incommod>"
                        " <escape_fraction><val>0.05</val></escape_fraction>"
                        " <escape_to><val>storage</val></escape_to>";
@@ -463,6 +484,8 @@ TEST_F(FlexibleFusionPlantTest, GuaranteedFailurePreventsOperation) {
   std::string config = common_config +
                        " <TBR>1.00</TBR> "
                        " <fuel_incommod>Tritium</fuel_incommod>"
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <startup_inventory>6.0</startup_inventory>"
                        " <failure_frequency>1e7</failure_frequency>";
 
   int simdur = 4;
@@ -484,6 +507,8 @@ TEST_F(FlexibleFusionPlantTest, ZeroFailureAllowsOperation) {
   // ensuring the plant operates reliably without any stochastic interruptions.
   std::string config = common_config +
                        " <TBR>1.00</TBR> "
+                       " <reserve_inventory>1.0</reserve_inventory>"
+                       " <startup_inventory>6.0</startup_inventory>"
                        " <fuel_incommod>Tritium</fuel_incommod>"
                        " <failure_frequency>0.0</failure_frequency>";
 
@@ -499,7 +524,80 @@ TEST_F(FlexibleFusionPlantTest, ZeroFailureAllowsOperation) {
   // sequester tritium into the breeder/storage loops.
   EXPECT_GT(seq_trit, 0.0);
 }
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEST_F(FlexibleFusionPlantTest, ComputeStartupZeroPower) {
+  // Test that a 0 MW plant correctly calculates that its startup inventory
+  // strictly equals its reserve inventory (no steady-state breeder mass).
+  
+  std::string config = 
+      " <fusion_power>0</fusion_power>"
+      " <reserve_inventory>5.0</reserve_inventory>"
+      " <compute_startup>1</compute_startup>"
+      " <components><val>storage</val><val>breeder</val></components>"
+      " <TBR>1.0</TBR>"
+      " <TBE>1.0</TBE>"
+      " <fuel_incommod>Tritium</fuel_incommod>";
 
+  cyclus::MockSim sim = InitializeSim(config, 1);
+  sim.Run();
+
+  // Query the transaction table to see how much Tritium was bought at t=0
+  std::vector<cyclus::Cond> conds_1;
+  conds_1.push_back(cyclus::Cond("Time", "==", std::string("0")));
+  conds_1.push_back(cyclus::Cond("Commodity", "==", std::string("Tritium")));
+  cyclus::QueryResult qr_1 = sim.db().Query("Transactions", &conds_1);
+  int resource_id = qr_1.GetVal<int>("ResourceId");
+
+  std::vector<cyclus::Cond> conds_2;
+  conds_2.push_back(cyclus::Cond("ResourceId", "==", std::to_string(resource_id)));
+  cyclus::QueryResult qr_2 = sim.db().Query("Resources", &conds_2);
+  double initial_buy = qr_2.GetVal<double>("Quantity");
+
+  // Expected: strictly the reserve inventory
+  EXPECT_DOUBLE_EQ(5.0, initial_buy);
+}
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEST_F(FlexibleFusionPlantTest, ComputeStartupAnalyticSteadyState) {
+  // Test that the linear solver accurately determines the steady-state
+  // breeder mass when active breeding and transfers are occurring.
+
+  std::string config =
+      " <fusion_power>300</fusion_power>"
+      " <reserve_inventory>5.0</reserve_inventory>"
+      " <compute_startup>1</compute_startup>"
+      " <components><val>storage</val><val>breeder</val></components>"
+      " <TBR>1.0</TBR>"
+      " <TBE>1.0</TBE>"
+      " <transfer_from><val>breeder</val></transfer_from>"
+      " <transfer_to><val>storage</val></transfer_to>"
+      " <transfer_rate><val>0.0001</val></transfer_rate>"
+      " <fuel_incommod>Tritium</fuel_incommod>";
+
+  cyclus::MockSim sim = InitializeSim(config, 1);
+  sim.Run();
+
+  std::vector<cyclus::Cond> conds_1;
+  conds_1.push_back(cyclus::Cond("Time", "==", std::string("0")));
+  conds_1.push_back(cyclus::Cond("Commodity", "==", std::string("Tritium")));
+  cyclus::QueryResult qr_1 = sim.db().Query("Transactions", &conds_1);
+  int resource_id = qr_1.GetVal<int>("ResourceId");
+
+  std::vector<cyclus::Cond> conds_2;
+  conds_2.push_back(cyclus::Cond("ResourceId", "==", std::to_string(resource_id)));
+  cyclus::QueryResult qr_2 = sim.db().Query("Resources", &conds_2);
+  double initial_buy = qr_2.GetVal<double>("Quantity");
+
+  // Analytical Calculation:
+  // Burn Rate = (300e6 W * 5.01e-27 kg) / (17.6 * 1.6021766e-13 J) = 5.3301146e-7 kg/s
+  // lambda_T = ln(2) / (12.32 * 365 * 24 * 3600) = 1.784e-9 / s
+  // Breeder Eq Mass = Burn Rate / (lambda_T + transfer_rate)
+  // Breeder Eq Mass = 5.3301146e-7 / (1.784e-9 + 0.0001) = 5.330105e-3 kg
+  // Total Expected = 5.0 (reserve) + 5.330105e-3 (breeder)
+  double expected_startup = 5.0053301;
+
+  // Use EXPECT_NEAR for minor floating point matrix solver variations
+  EXPECT_NEAR(expected_startup, initial_buy, 1e-5);
+}
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // Do Not Touch! Below section required for connection with Cyclus
 cyclus::Agent* FlexibleFusionPlantConstructor(cyclus::Context* ctx) {

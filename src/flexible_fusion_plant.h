@@ -35,8 +35,6 @@ namespace tricycle {
 /// @section optionalparams Optional Parameters
 /// TBE: tritium burn efficiency, the fraction of tritium sent to the plasma
 /// which is burned. Defaults to 1.
-/// conversion_efficiency: the efficiency of conversion from fusion heat
-/// to electricity. Defaults to 1.
 /// failure_frequency: the frequency (per year) with which the plant shuts
 /// down - a measure of plant reliability. Defaults to 0, i.e., perfectly
 /// reliable.
@@ -72,15 +70,15 @@ namespace tricycle {
 /// Defaults of 0.1 kg per purchase.
 /// buy_frequency: How frequently (in timesteps) the reactor attempts to 
 /// purchase new fuel. Defaults to 1, i.e., purchasing every timestep.
+/// compute_startup: recomputes the startup inventory based on the transition
+/// rate matrix. Overwrites any input value.
 ///
 /// @section detailed Detailed Behavior
 /// The plant consists of several 'components' which can each contain tritium.
 /// During Tick, the plant decides whether to operate based on several factors.
 /// If the plant has not previously operated, it checks whether it has a
 /// sufficiently large startup_inventory. If the plant has previously operated,
-/// it instead checks whether it has a sufficient reserve_inventory.
-/// In case these are both small, the plant also checks whether it has enough
-/// tritium to burn during the timestep.
+/// it instead checks whether it has a sufficient inventory currently in storage.
 /// Finally, the plant may fail during a step, depending on its failure_frequency.
 /// A failure probability is calculated, a random number is generated, and
 /// its value then determines whether the plant operates. If it fails, it 
@@ -93,12 +91,7 @@ namespace tricycle {
 /// will still leak/transfer from other components as specified, e.g., from the
 /// blanket into storage.
 ///
-/// Following operation, tritium in excess of the reserve is moved to the
-/// excess store where it can be sold.
-///
-/// Place a description of the detailed behavior of the agent. Consider
-/// describing the behavior at the tick and tock as well as the behavior
-/// upon sending and receiving materials and messages.
+/// Following operation, tritium in excess of the reserve is offered to be sold.
 ///
 class FlexibleFusionPlant : public cyclus::Facility  {
  public:
@@ -137,10 +130,14 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   //Functions:
   bool ReadyToOperate();
   void OperateReactor(bool burn_tritium = true);
+  void EstimateStartup();
   Eigen::MatrixXd BuildMatrix(double tritium_consumption_rate);
   double SequesteredTritium();
   void RecordInventories(double tritium_storage, double tritium_excess, 
                          double sequestered_tritium);
+  // Helper for producing the tritium vector
+  Eigen::VectorXd CurrentTritiumVector();
+
 
  private:
   //State Variables:
@@ -154,17 +151,6 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   }
   double fusion_power;
   
-  #pragma cyclus var { \
-    "doc": "Conversion efficiency from DT burning to electrical power", \
-    "tooltip": "Conversion efficiency", \
-    "units": "dimensionless", \
-    "uitype": "range", \
-    "range": [0, 1], \
-    "default": 1, \
-    "uilabel": "Conversion efficiency" \
-  }
-  double conversion_efficiency;
-
   #pragma cyclus var { \
     "doc": "Achievable system tritium breeding ratio before decay", \
     "tooltip": "Achievable system tritium breeding ratio before decay", \
@@ -251,7 +237,7 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   double reserve_inventory;  
 
   #pragma cyclus var { \
-    "doc": "Minimum tritium inventory to start the reactor from fresh. Should be larger "\
+    "doc": "Minimum tritium inventory to start the reactor from fresh. Should be greater "\
 	   "than or equal to reserve inventory", \
     "tooltip": "Minimum tritium inventory to start the reactor", \
     "units": "kg", \
@@ -259,6 +245,15 @@ class FlexibleFusionPlant : public cyclus::Facility  {
     "uilabel": "Startup Inventory" \
   }
   double startup_inventory;  
+
+  #pragma cyclus var { \
+    "doc": "Determines whether to compute startup inventory based on the "\
+	   "transition matrix.",\
+    "tooltip": "Recomputes startup inventory", \
+    "default": False, \
+    "uilabel": "compute startup inventory" \
+  }
+  bool compute_startup;  
 
   #pragma cyclus var { \
     "doc": "Fresh fuel commodity", \
@@ -320,8 +315,8 @@ class FlexibleFusionPlant : public cyclus::Facility  {
 
   cyclus::toolkit::TotalInvTracker fuel_tracker;
 
-  double fuel_usage_mass;
   double burn_rate;
+  double feed_rate;
 
   // Variables controlling failure frequency and recovery
   int recovery_counter = 0;
@@ -332,6 +327,9 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   // or reserve inventory in deciding to operate
   bool has_started = false;
 
+  // Controls whether the plant can start selling tritium
+  bool time_to_sell = false;
+
   //Materials:
   cyclus::Material::Ptr sequestered_tritium;
 
@@ -339,10 +337,18 @@ class FlexibleFusionPlant : public cyclus::Facility  {
   // One for with plasma, one for without
   Eigen::MatrixXd A_burn;
   Eigen::MatrixXd A_off;
+  // And their exponentiated counterparts
+  Eigen::MatrixXd EXPA_burn;
+  Eigen::MatrixXd EXPA_off;
 
   // Indices of different components
   std::map<std::string,int> comp_index;
-
+  
+  // Buffer for dynamically-generated per-component column names passed to
+  // AddVal. Must persist beyond the call to RecordInventories because Datum
+  // stores a raw const char* rather than copying the string (see AddValBase).
+  std::vector<std::string> column_names_buffer;
+  
   // Private function for input checking
   void ValidateInput();
 
